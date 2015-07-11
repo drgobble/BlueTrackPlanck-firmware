@@ -51,7 +51,7 @@ FORMAT = ihex
 TARGET = main
 
 # List C source files here. (C dependencies are automatically generated.)
-SRC = $(TARGET).c uart.c ps2.c
+SRC = $(TARGET).c uart.c tmkps2/ps2_busywait.c tmkps2/ps2_io_avr.c tmkps2/ps2_mouse.c tmkps2/debug.c tmkps2/host.c tmkps2/print.c tmkps2/util.c tmkps2/timer.c
 
 # List Assembler source files here.
 #     Make them always end in a capital .S.  Files ending in a lowercase .s
@@ -119,7 +119,7 @@ CFLAGS += -Wall -Wstrict-prototypes
 CFLAGS += -Wa,-adhlns=$(<:.c=.lst)
 CFLAGS += $(patsubst %,-I%,$(EXTRAINCDIRS))
 CFLAGS += $(CSTANDARD)
-
+CFLAGS += -include "config.h" -DPS2_MOUSE_ENABLE -DPS2_USE_BUSYWAIT -include "avr/io.h"
 
 #---------------- Assembler Options ----------------
 #  -Wa,...:   tell GCC to pass this to the assembler.

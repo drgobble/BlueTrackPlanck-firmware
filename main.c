@@ -12,8 +12,9 @@
 #include "keys.h"
 
 
-#include "ps2.h"
 
+#include "tmkps2/ps2_mouse.h"
+#include "tmkps2/report.h"
 
 /* char matrix[4][12] = { */
 /*   {KEY_Q,KEY_W,KEY_E,KEY_R,KEY_T, KEY_P,   KEY_2, KEY_Y,KEY_U,KEY_I,KEY_O,KEY_P}, */
@@ -65,7 +66,7 @@ char matrix[N_LAYER*4*12] = {
 
   K_F1,    K_F2,   K_F3,    K_F4,   K_F5,     K_F6,       K_F7,       K_F8,  K_F9,     K_F10,    K_F11,    K_F12,
   K_1,     K_2,    K_3,     K_4,    K_5,      M_CONTROL_L,K_RETURN,   K_6,   K_7,      K_8,      K_9,      K_0,
-  K_APOSTROPHE,K_MINUS,K_EQUAL,K_4, K_5,      K_GRAVE,    CLICK_R,    CLICK_L,MOUSE_L,  MOUSE_D,  MOUSE_U,  MOUSE_R,
+  K_APOSTROPHE,K_MINUS,K_EQUAL,K_NONE, K_NONE,      K_GRAVE,    CLICK_R,    CLICK_L,MOUSE_L,  MOUSE_D,  MOUSE_U,  MOUSE_R,
   K_ESCAPE,K_NONE, M_ALT_L, M_GUI_L,M_SHIFT_L,K_NONE,     K_SPACE,    L_ONE, K_HOME,   K_PAGE_D, K_PAGE_U, K_END
 };
 
@@ -73,13 +74,29 @@ int mouse_x = 0;
 int mouse_y = 0;
 int mouse_click = 0;
 
+int mouse_x_last = 0;
+int mouse_y_last = 0;
+int mouse_click_last = 0;
+
+
 void reset_mouse_report() {
+  mouse_x_last = mouse_x;
+  mouse_y_last = mouse_y;
+  mouse_click_last = mouse_click;
+
   mouse_x = 0;
   mouse_y = 0;
   mouse_click = 0;
 }
 
 void send_raw_mouse_report() {
+
+  int newmouse = 0;
+  if (mouse_click != mouse_click_last) newmouse = 1;
+  if (mouse_x != mouse_x_last) newmouse = 1;
+  if (mouse_y != mouse_y_last) newmouse = 1;
+  if (newmouse == 0) return;
+
   uart_putchar(0xFD,stdout);
   uart_putchar(0x00,stdout);
   uart_putchar(0x03,stdout);
@@ -96,7 +113,15 @@ int nkey=0;
 char keys[6];
 char modifier;
 
+int nkey_last;
+char keys_last[6];
+char modifier_last;
+
 void reset_report() {
+  nkey_last = nkey;
+  for(int i=0;i<6;i++) keys_last[i] = keys[i];
+  modifier_last = modifier;
+
   nkey=0;
   for(int i=0;i<6;i++) keys[i]=0x00;
   modifier = 0;
@@ -104,6 +129,12 @@ void reset_report() {
 
 
 void send_raw_key_report() {
+  bool newkey = 0;
+  if( modifier != modifier_last) newkey = 1;
+  for(int i=0;i<6;i++) if(keys_last[i]!=keys[i]) newkey = 1;
+
+  if (newkey == 0) return;
+
   uart_putchar(0xFD,stdout);
   uart_putchar(modifier,stdout); // Modifier
   uart_putchar(0x00,stdout);
@@ -162,55 +193,62 @@ void process_key(int id, int st) {
   state[id] = st;
 }
 
+extern report_mouse_t mouse_report;
+
 int main(void) {
   DDRB = 0b00011110; //Configure some of them to be input, some to output
   PORTB = 0xFF; // all of them to pull up or high
 
   DDRC = 0x00; // All of them to input
   PORTC = 0xFF; // with a pull up
-  DDRD = 0x00; // D will be reconfigured by the uart module.
   PORTD = 0xFF;
-
+  
   _delay_ms(100);
 
   uart_init();
   stdout = &uart_output;
   stdin  = &uart_input;
-
-  ps2_init();
-
+  ps2_mouse_init();
+  /* ps2_init(); */
+  _delay_ms(100);
   reset_report();
   send_raw_key_report();
 
-  
+  DDRD &= 0b00011111; // D will be reconfigured by the uart module.
+
   int i,j;
   while(1) {
     reset_report();
     reset_mouse_report();
-    keys[0] = K_A;
-    /* for(j=0; j<4; j++) { */
-    /*   PORTB = ~(1<<(1+j)); */
-    /*   for(i=0; i<6; i++) { */
-    /* 	  process_key(j*12+i, !(PINC & (1<<i))); */
-    /*   } */
-    /*   process_key(j*12+i, !(PINB & 1)  ); */
-    /*   i++; */
-    /*   process_key(j*12+i, !(PIND & (1<<7))); */
-    /*   i++; */
-    /*   process_key(j*12+i, !(PIND & (1<<6))); */
-    /*   i++; */
-    /*   process_key(j*12+i, !(PIND & (1<<5))); */
-    /*   i++; */
-    /*   process_key(j*12+i, !(PINB & (1<<7))); */
-    /*   i++; */
-    /*   process_key(j*12+i, !(PINB & (1<<6))); */
-    /* } */
-    mouse_stat( &mouse_click, &mouse_x,&mouse_y );
-
+    /* keys[0] = K_A; */
+    for(j=0; j<4; j++) {
+      PORTB = ~(1<<(1+j));
+      for(i=0; i<6; i++) {
+    	  process_key(j*12+i, !(PINC & (1<<i)));
+      }
+      process_key(j*12+i, !(PINB & 1)  );
+      i++;
+      process_key(j*12+i, !(PIND & (1<<7)));
+      i++;
+      process_key(j*12+i, !(PIND & (1<<6)));
+      i++;
+      process_key(j*12+i, !(PIND & (1<<5)));
+      i++;
+      process_key(j*12+i, !(PINB & (1<<7)));
+      i++;
+      process_key(j*12+i, !(PINB & (1<<6)));
+    }
     send_raw_key_report();
+
+    ps2_mouse_task();
+
+    mouse_report.x >>= 1;
+    mouse_report.y >>= 1;
+
+    mouse_x = mouse_report.x;
+    mouse_y = mouse_report.y;
     send_raw_mouse_report();
 
-    _delay_ms(10);
   }
         
   return 0;
