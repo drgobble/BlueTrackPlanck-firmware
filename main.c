@@ -42,7 +42,7 @@ char mode[N_LAYER*4*12] = {
 
   K,K,K,K,K, K,K, K,K,K,K,K,
   K,K,K,K,K, M,K, K,K,K,K,K,
-  K,K,K,K,K, K,L, L,L,L,L,L,
+  K,K,K,K,L, K,L, L,L,L,L,L,
   K,K,M,M,M, K,K, L,K,K,K,K
 };
 
@@ -51,6 +51,7 @@ char mode[N_LAYER*4*12] = {
 #undef L
 
 #define L_ONE 1
+#define L_MTOG 8
 #define MOUSE_L 2
 #define MOUSE_R 3
 #define MOUSE_D 4
@@ -66,10 +67,13 @@ char matrix[N_LAYER*4*12] = {
 
   K_F1,    K_F2,   K_F3,    K_F4,   K_F5,     K_F6,       K_F7,       K_F8,  K_F9,     K_F10,    K_F11,    K_F12,
   K_1,     K_2,    K_3,     K_4,    K_5,      M_CONTROL_L,K_RETURN,   K_6,   K_7,      K_8,      K_9,      K_0,
-  K_APOSTROPHE,K_MINUS,K_EQUAL,K_NONE, K_NONE,      K_GRAVE,    CLICK_R,    CLICK_L,MOUSE_L,  MOUSE_D,  MOUSE_U,  MOUSE_R,
+  K_APOSTROPHE,K_MINUS,K_EQUAL,K_NONE, L_MTOG,      K_GRAVE,    CLICK_R,    CLICK_L,MOUSE_L,  MOUSE_D,  MOUSE_U,  MOUSE_R,
   K_ESCAPE,K_NONE, M_ALT_L, M_GUI_L,M_SHIFT_L,K_NONE,     K_SPACE,    L_ONE, K_HOME,   K_PAGE_D, K_PAGE_U, K_END
 };
 
+int mouse_delay = 2;
+int mouse_trackpt = 0;
+int mouse_toggle = 0;
 int mouse_x = 0;
 int mouse_y = 0;
 int mouse_click = 0;
@@ -91,12 +95,13 @@ void reset_mouse_report() {
 
 void send_raw_mouse_report() {
 
-  int newmouse = 0;
-  if (mouse_click != mouse_click_last) newmouse = 1;
-  if (mouse_x != mouse_x_last) newmouse = 1;
-  if (mouse_y != mouse_y_last) newmouse = 1;
-  if (newmouse == 0) return;
-
+  /* int newmouse = 0; */
+  /* if (mouse_click != mouse_click_last) newmouse = 1; */
+  /* if (mouse_x != mouse_x_last) newmouse = 1; */
+  /* if (mouse_y != mouse_y_last) newmouse = 1; */
+  /* if (newmouse == 0) return; */
+  if( (mouse_x == 0 && mouse_y == 0 && mouse_click == 0) && 
+      (mouse_x_last == 0 && mouse_y_last == 0 && mouse_click_last == 0)) return;
   uart_putchar(0xFD,stdout);
   uart_putchar(0x00,stdout);
   uart_putchar(0x03,stdout);
@@ -156,22 +161,38 @@ void special(char data, int st) {
     active_layer = (st?1:0);
     break;
   case MOUSE_U:
-    if(st) mouse_y = -10;
+    if(st) mouse_y =  (modifier&M_SHIFT_L?-1:-10);
     break;
   case MOUSE_D:
-    if(st) mouse_y =  10;
+    if(st) mouse_y =  (modifier&M_SHIFT_L?1:10);
     break;
   case MOUSE_L:
-    if(st) mouse_x = -10;
+    if(st) mouse_x = (modifier&M_SHIFT_L?-1:-10);
     break;
   case MOUSE_R:
-    if(st) mouse_x =  10;
+    if(st) mouse_x =  (modifier&M_SHIFT_L?1:10);
     break;
   case CLICK_L:
     if(st) mouse_click |= 1;
     break;
   case CLICK_R:
     if(st) mouse_click |=  2;
+    break;
+  case L_MTOG:
+    if(st) {
+      if(!mouse_toggle) {
+	mouse_toggle = 1;
+     	if(mouse_trackpt==0) {
+	  mouse_trackpt = 1;
+	} else {
+	  mouse_trackpt = 0;
+	}
+      }
+    } else {
+      mouse_toggle = 0;
+    }
+    break;
+  default:
     break;
   }
 }
@@ -240,13 +261,32 @@ int main(void) {
     }
     send_raw_key_report();
 
-    ps2_mouse_task();
+    if( mouse_delay == 0) {
+      if( mouse_trackpt ) {
+	ps2_mouse_task();
+      
+	if( (mouse_report.x < 10 && mouse_report.x > -10) || 
+	    (mouse_report.y < 10 && mouse_report.y > -10)  )  {
+	  if( (mouse_report.x < 2 && mouse_report.x > -2) || 
+	      (mouse_report.y < 2 && mouse_report.y > -2)  ) {
+	    mouse_report.x = 0;
+	    mouse_report.y = 0;
+	  } else {
+	    mouse_report.x >>= 2;
+	    mouse_report.y >>= 2;
+	  }
+	} else {
+	  mouse_report.x >>= 1;
+	  mouse_report.y >>= 1;
+	}
 
-    mouse_report.x >>= 1;
-    mouse_report.y >>= 1;
-
-    mouse_x = mouse_report.x;
-    mouse_y = mouse_report.y;
+	mouse_x = mouse_report.x;
+	mouse_y = mouse_report.y;
+      }
+      mouse_delay = 2;
+    } else {
+      mouse_delay --;
+    }
     send_raw_mouse_report();
 
   }
